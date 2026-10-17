@@ -28,6 +28,9 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 	log.SetPrefix("sinty-logind: ")
+	if os.Getenv("DBUS_SYSTEM_BUS_ADDRESS") == "" {
+		os.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

@@ -7,7 +7,9 @@ Before=singularity-compositor.service
 
 [Service]
 Type=simple
-ExecStartPre=-/bin/mkdir -p /run/singularity /run/user/102
+ExecStartPre=-/bin/mkdir -p /run/singularity /run/user/102 /var/lib/greetd /tmp/.X11-unix
+ExecStartPre=-/bin/chown greeter:greeter /var/lib/greetd
+ExecStartPre=-/bin/chmod 1777 /tmp/.X11-unix
 ExecStartPre=-/bin/chown greeter:singularity-session /run/singularity
 ExecStartPre=-/bin/chmod 0770 /run/singularity
 ExecStartPre=-/bin/chown greeter /run/user/102
