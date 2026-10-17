@@ -1,0 +1,6 @@
+/sinty-logind
+*.test
+*.out
+
+.DS_Store
+*.swp
