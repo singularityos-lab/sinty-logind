@@ -1,7 +1,7 @@
 # sinty-logind
 
 The login, session and seat manager of SintyOS. One root daemon does what
-greetd, seatd and systemd-logind do on other systems: it runs the login
+greetd, seatd, systemd-logind and accounts-daemon do on other systems: it runs the login
 screen, authenticates users through PAM, starts their sessions, hands the
 graphics and input devices to the compositor and answers on
 `org.freedesktop.login1` for power, sessions and the seat.
@@ -36,6 +36,9 @@ compositor, the greeter and the desktop all ask the same process.
   session methods `TakeControl`, `TakeDevice`, `ReleaseDevice`, `Activate`,
   `Terminate`, `Lock`, `Unlock` and `SetBrightness`.
 - **The power button**, which turns the machine off.
+- **`org.freedesktop.Accounts`**, the users and their settings, served from
+  this process by the [sinty-accounts](https://github.com/singularityos-lab/sinty-accounts)
+  package, so one daemon answers for users and their sessions.
 
 Callers are authorized by uid: power actions are open to root, human users
 and the greeter; session methods to the session's own user and root.

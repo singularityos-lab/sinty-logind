@@ -119,6 +119,9 @@ func New(displayUser string, vt int) (*Service, error) {
 	return s, nil
 }
 
+// Conn is the system bus connection the service is published on.
+func (s *Service) Conn() *dbus.Conn { return s.conn }
+
 type manager struct{ s *Service }
 type seatObject struct{ s *Service }
 type sessionObject struct {
