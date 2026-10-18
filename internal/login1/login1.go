@@ -417,10 +417,29 @@ func (s *Service) resolve(pid uint32) *Session {
 	if sess := s.sessionForPID(pid); sess != nil {
 		return sess
 	}
-	if uid, ok := uidOf(pid); ok && uid == s.greeterUID && s.greeterUID != 0 {
+	uid, ok := uidOf(pid)
+	if !ok {
+		return nil
+	}
+	if uid == s.greeterUID && s.greeterUID != 0 {
 		return s.displaySession(pid)
 	}
-	return nil
+	return s.userSession(uid)
+}
+
+func (s *Service) userSession(uid uint32) *Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[s.active]; ok && sess.UID == uid && sess.Class == "user" {
+		return sess
+	}
+	var found *Session
+	for _, sess := range s.sessions {
+		if sess.UID == uid && sess.Class == "user" && (found == nil || sess.Started.Before(found.Started)) {
+			found = sess
+		}
+	}
+	return found
 }
 
 func noSession(what string) *dbus.Error {
