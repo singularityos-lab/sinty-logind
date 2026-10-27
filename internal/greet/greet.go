@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/singularityos-lab/sinty-logind/internal/cgroup"
 	"github.com/singularityos-lab/sinty-logind/internal/config"
 	"github.com/singularityos-lab/sinty-logind/internal/pam"
 )
@@ -305,13 +306,30 @@ func (m *Manager) runSession(p *pendingSession) error {
 	}
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: groups}}
+	group, err := cgroup.Prepare(int(uid), int(gid), id)
+	if err != nil {
+		log.Printf("session %s: no cgroup: %v", id, err)
+	} else if dir, err := os.Open(group.Path); err == nil {
+		defer dir.Close()
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(dir.Fd())
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	m.tracker.SessionStarted(id, uid, u.Username, cmd.Process.Pid, "user", m.cfg.VT)
 	err = cmd.Wait()
 	m.tracker.SessionEnded(id)
+	if group != nil {
+		group.Thaw()
+	}
 	syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	if group != nil {
+		go func() {
+			time.Sleep(5 * time.Second)
+			group.Release()
+		}()
+	}
 	return err
 }
 
