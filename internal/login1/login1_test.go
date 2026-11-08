@@ -64,3 +64,21 @@ func TestBlockInhibitorsHoldBackTheirAction(t *testing.T) {
 		t.Fatal("a block inhibitor does not hold back sleep")
 	}
 }
+
+func TestIdleWhenEveryUserSessionIs(t *testing.T) {
+	s := &Service{sessions: map[string]*Session{
+		"1": {ID: "1", Class: "greeter"},
+	}}
+	if s.allIdle() {
+		t.Fatal("idle with no user session")
+	}
+	s.sessions["2"] = &Session{ID: "2", Class: "user", idle: true}
+	s.sessions["3"] = &Session{ID: "3", Class: "user"}
+	if s.allIdle() {
+		t.Fatal("idle while a user session is in use")
+	}
+	s.sessions["3"].idle = true
+	if !s.allIdle() {
+		t.Fatal("not idle with every user session idle")
+	}
+}

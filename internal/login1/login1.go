@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,6 +79,7 @@ type Service struct {
 	greeterUID  uint32
 	inhibitors  []inhibitor
 	seatProps   *prop.Properties
+	mgrProps    *prop.Properties
 }
 
 type inhibitor struct {
@@ -134,16 +136,18 @@ func (s *Service) export() error {
 	if err := s.conn.Export(m, managerPath, managerIface); err != nil {
 		return err
 	}
-	if _, err := prop.Export(s.conn, managerPath, prop.Map{managerIface: {
-		"IdleHint":             {Value: false, Emit: prop.EmitFalse},
+	mgr, err := prop.Export(s.conn, managerPath, prop.Map{managerIface: {
+		"IdleHint":             {Value: false, Emit: prop.EmitTrue},
 		"PreparingForSleep":    {Value: false, Emit: prop.EmitTrue},
 		"PreparingForShutdown": {Value: false, Emit: prop.EmitTrue},
 		"Docked":               {Value: false, Emit: prop.EmitFalse},
 		"HandlePowerKey":       {Value: "poweroff", Emit: prop.EmitFalse},
 		"NAutoVTs":             {Value: uint32(0), Emit: prop.EmitFalse},
-	}}); err != nil {
+	}})
+	if err != nil {
 		return err
 	}
+	s.mgrProps = mgr
 	if err := s.conn.Export(&seatObject{s}, seatPath, seatIface); err != nil {
 		return err
 	}
@@ -241,6 +245,7 @@ func (s *Service) SessionEnded(id string) {
 		s.activateDisplay()
 	}
 	s.refreshSeat()
+	s.publishIdle()
 }
 
 func (s *Service) exportSession(sess *Session) {
@@ -357,6 +362,37 @@ func (s *Service) setActive(id string) {
 		s.setProp(next, "Active", true)
 	}
 	s.refreshSeat()
+}
+
+func (s *Service) setManagerProp(name string, value interface{}) {
+	if s.mgrProps == nil {
+		return
+	}
+	if cur, err := s.mgrProps.Get(managerIface, name); err == nil && cur.Value() == value {
+		return
+	}
+	s.mgrProps.SetMust(managerIface, name, value)
+}
+
+func (s *Service) allIdle() bool {
+	users := 0
+	for _, sess := range s.sessions {
+		if sess.Class != "user" {
+			continue
+		}
+		users++
+		if !sess.idle {
+			return false
+		}
+	}
+	return users > 0
+}
+
+func (s *Service) publishIdle() {
+	s.mu.Lock()
+	idle := s.allIdle()
+	s.mu.Unlock()
+	s.setManagerProp("IdleHint", idle)
 }
 
 func (s *Service) setProp(sess *Session, name string, value interface{}) {
@@ -575,12 +611,25 @@ func (m *manager) Hibernate(sender dbus.Sender, interactive bool) *dbus.Error {
 }
 
 func (s *Service) sleep(state string) {
+	s.setManagerProp("PreparingForSleep", true)
 	s.conn.Emit(managerPath, managerIface+".PrepareForSleep", true)
 	s.waitInhibitors("sleep", 5*time.Second)
 	if err := os.WriteFile("/sys/power/state", []byte(state), 0); err != nil {
 		log.Printf("suspend: %v", err)
 	}
+	s.setManagerProp("PreparingForSleep", false)
 	s.conn.Emit(managerPath, managerIface+".PrepareForSleep", false)
+	s.logResume()
+}
+
+func (s *Service) logResume() {
+	var parts []string
+	for _, f := range []string{"mem_sleep", "pm_wakeup_irq", "suspend_stats/last_hw_sleep", "suspend_stats/fail", "suspend_stats/last_failed_dev"} {
+		if data, err := os.ReadFile(filepath.Join("/sys/power", f)); err == nil {
+			parts = append(parts, f+"="+strings.TrimSpace(string(data)))
+		}
+	}
+	log.Printf("resumed: %s", strings.Join(parts, " "))
 }
 
 // CanReboot reports whether Reboot is allowed.
@@ -875,7 +924,11 @@ func (o *sessionObject) SetIdleHint(sender dbus.Sender, idle bool) *dbus.Error {
 	if derr != nil {
 		return derr
 	}
+	o.s.mu.Lock()
+	sess.idle = idle
+	o.s.mu.Unlock()
 	o.s.setProp(sess, "IdleHint", idle)
+	o.s.publishIdle()
 	return nil
 }
 
@@ -885,6 +938,9 @@ func (o *sessionObject) SetLockedHint(sender dbus.Sender, locked bool) *dbus.Err
 	if derr != nil {
 		return derr
 	}
+	o.s.mu.Lock()
+	sess.locked = locked
+	o.s.mu.Unlock()
 	o.s.setProp(sess, "LockedHint", locked)
 	return nil
 }
