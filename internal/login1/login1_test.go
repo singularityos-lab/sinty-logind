@@ -43,3 +43,24 @@ func TestResolvePrefersTheSessionTree(t *testing.T) {
 		t.Fatalf("got %+v, want the session whose leader is an ancestor", sess)
 	}
 }
+
+func TestBlockInhibitorsHoldBackTheirAction(t *testing.T) {
+	s := &Service{inhibitors: []inhibitor{
+		{what: "handle-power-key:handle-suspend-key", mode: "block"},
+		{what: "sleep", mode: "delay"},
+		{what: "handle-lid-switch", mode: "block"},
+	}}
+	if !s.Blocked("handle-power-key") {
+		t.Fatal("the power key inhibitor of the desktop is ignored")
+	}
+	if s.Blocked("sleep") {
+		t.Fatal("a delay inhibitor blocks sleep")
+	}
+	if s.Blocked("handle-lid") {
+		t.Fatal("a partial name matches an inhibitor")
+	}
+	s.inhibitors = append(s.inhibitors, inhibitor{what: "shutdown:sleep", mode: "block"})
+	if !s.Blocked("sleep") {
+		t.Fatal("a block inhibitor does not hold back sleep")
+	}
+}

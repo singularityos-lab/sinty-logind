@@ -561,6 +561,9 @@ func (m *manager) Suspend(sender dbus.Sender, interactive bool) *dbus.Error {
 	if !ok {
 		return denied("Suspend", uid)
 	}
+	if m.s.Blocked("sleep") {
+		return dbus.NewError("org.freedesktop.login1.BlockedByInhibitorLock", []interface{}{"sleep is blocked by an application"})
+	}
 	go m.s.sleep("mem")
 	return nil
 }
@@ -649,6 +652,26 @@ func (m *manager) ListInhibitors() ([]inhibitorEntry, *dbus.Error) {
 		out = append(out, inhibitorEntry{in.what, in.who, in.why, in.mode, in.uid, in.pid})
 	}
 	return out, nil
+}
+
+func locks(list, what string) bool {
+	for _, w := range strings.Split(list, ":") {
+		if w == what {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) Blocked(what string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, in := range s.inhibitors {
+		if in.mode == "block" && locks(in.what, what) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) waitInhibitors(what string, limit time.Duration) {

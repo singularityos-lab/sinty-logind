@@ -63,7 +63,12 @@ func main() {
 	if _, err := seatd.Listen(seatSocket, gid); err != nil {
 		log.Printf("seat: %v", err)
 	}
-	power.Watch(power.PowerOff)
+	power.Watch(func() {
+		if service.Blocked("handle-power-key") {
+			return
+		}
+		power.PowerOff()
+	})
 	if *noGreeter {
 		select {}
 	}
